@@ -19,19 +19,30 @@ This document describes the current implementation behavior.
    - This value overrides the parsed location.
 3. Choose `Target`:
    - `Apple Calendar Event`
-   - `Apple Reminder`
-   - Deadline intent defaults to `Apple Reminder` unless manually overridden.
+   - `Reminder Item`
+   - Deadline intent defaults to `Reminder Item` unless manually overridden.
 4. Select the destination:
    - `Calendar` for events
    - `Reminder List` for reminders
 5. Run one of the actions:
-   - `Create in Apple Calendar`
-   - `Create and Open Calendar`
-   - `Create in Reminders`
+   - `Add to Apple Calendar`
+   - `Add and Open Calendar`
+   - `Add to Reminders`
+6. If recurrence is detected and target is Calendar:
+   - choose `Recurrence End`
+   - `End by count` or `End by date`
 
 ## 3) Parsing Rules
 
-### 3-1) Date Rules
+### 3-1) Batch Input Rules
+
+- Up to 3 clauses are accepted in one input.
+- Primary split tokens: `,` and `;`
+- Conditional split tokens: `그리고` / `하고`
+  - split only when the next clause starts with a date/time cue
+- If a later clause omits date but includes time, the first parsed date cue is inherited.
+
+### 3-2) Date Rules
 
 - Relative days: `오늘`, `내일`, `모레`
 - Relative month day: `이번달 25일`, `이달 20일`, `다음달 3일`, `담달 1일`
@@ -43,7 +54,7 @@ This document describes the current implementation behavior.
 - Week-level deadlines: `이번주 내`, `다음주 내`, `다다음주 내`
 - Month-level deadlines: `이번달 내`, `이달 내`, `다음달 내`, `담달 내`
 
-### 3-2) Time Rules
+### 3-3) Time Rules
 
 - AM/PM tokens: `오전 9시`, `오후 3시 반`, `밤 12시`
 - 24-hour format: `14:30`
@@ -57,7 +68,16 @@ This document describes the current implementation behavior.
 - Start-only emphasis: `... 4시부터 ...`
   - Uses default duration (60 minutes).
 
-### 3-3) Deadline Rules
+### 3-4) Recurrence Rules
+
+- Supported recurrence prefixes:
+  - `매일 ...`
+  - `매주 (요일) ...`
+  - `매월 N일 ...`
+- Recurrence is currently submit-supported for Calendar target only.
+- For Reminder target, recurring clauses are rejected at submit time with an explicit error.
+
+### 3-5) Deadline Rules
 
 Supported suffixes:
 
@@ -74,22 +94,26 @@ Behavior:
   - parsed `start` is saved as due date
   - all-day deadlines save date-only due components
 
-### 3-4) Location Rules
+### 3-6) Location Rules
 
-- `...에서` is parsed as location.
+- Location extraction priority:
+  1. explicit marker: `장소는 ...`, `장소: ...`, `장소= ...`
+  2. trailing sentence-end form: `... 회의실에서`
+  3. leading form: `회의실에서 ...`
+  4. fallback capture from parser head match
 - Manual location overrides parsed location.
 
-### 3-5) Title Rules
+### 3-7) Title Rules
 
 - Remaining text after removing date/time/location tokens is used as title.
-- If empty, fallback title is `Untitled`.
+- If empty, fallback title is `새 일정` (internal parser default).
 
-### 3-6) Past-Time Adjustments
+### 3-8) Past-Time Adjustments
 
 - Weekday-only expressions without week modifier move to next week when already past.
 - Month/day without year moves to next year when already past.
 
-### 3-7) Conflict Priority
+### 3-9) Conflict Priority
 
 1. `부터 ~까지` range expressions
 2. Deadline expressions (`까지/전에/이내/내/중`)
@@ -99,6 +123,7 @@ Behavior:
 
 - Calendar:
   - Saves `title/start/end/location/allDay` to EventKit event.
+  - Saves recurrence rule when recurrence is detected and validated.
 - Reminder:
   - Saves parsed `start` as due date.
   - If location exists, stores `Location: ...` in reminder notes.
@@ -112,6 +137,7 @@ Behavior:
 
 ## 6) Known Limits
 
-- Standalone generic deadline keywords without date clues (`마감`, `기한`, `데드라인`)
-- Complex multi-deadline combinations (`오늘 중 3시간 이내`)
-- Sentences without any date/time clues (`회의 잡아줘`)
+- At most 3 clauses per input are processed.
+- Recurrence submission is Calendar-only.
+- Complex nested deadline combinations may not match user intent exactly (for example, `오늘 중 3시간 이내`).
+- Sentences without date/time cues fail parsing (for example, `회의 잡아줘`).
